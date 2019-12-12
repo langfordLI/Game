@@ -1,0 +1,243 @@
+#include <Windows.h>
+#include <iostream>
+#include <time.h>
+#include <tchar.h>
+using namespace std;
+
+#pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "MSImg32.lib")
+
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
+#define WINDOW_TITLE L"core framework"
+
+HDC g_hdc = NULL;
+HDC g_mdc = NULL;
+HDC g_bufdc = NULL;
+RECT g_rect;
+
+bool Game_Init(HWND hwnd);
+void Game_Paint(HWND hwnd);
+bool Game_CleanUp(HWND hwnd);
+
+struct Brid
+{
+	int x;
+	int y;
+	int x_speed;
+	int y_speed;
+	int gravity;
+	int x_friction;
+	int y_friction;
+};
+Brid brid;
+HBITMAP g_hBrid = NULL;
+HBITMAP g_hBackground = NULL;
+DWORD g_hPre = 0, g_hNow = 0;
+
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+void BubSort(int n);
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+{
+	WNDCLASSEX myClass = { 0 };
+	myClass.cbSize = sizeof(WNDCLASSEX);
+	myClass.style = CS_HREDRAW | CS_VREDRAW;
+	myClass.lpfnWndProc = WndProc;
+	myClass.cbClsExtra = 0; // The number of extra bytes to allocate following the window-class structure.
+	myClass.cbWndExtra = 0; // The number of extra bytes to allocate following the window instance.
+	myClass.hInstance = hInstance;
+	//B myClass.hIcon = LoadIcon(NULL, L"icon.ico");
+	myClass.hIcon = (HICON)LoadImage(NULL, L"icon.ico", IMAGE_ICON, 0, 0,
+		LR_DEFAULTSIZE | LR_LOADFROMFILE);
+	myClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+	myClass.hbrBackground = (HBRUSH)GetStockObject(GRAY_BRUSH);
+	myClass.lpszMenuName = NULL;
+	myClass.lpszClassName = L"For the dream of game development";
+
+	if (!RegisterClassEx(&myClass))
+		return -1;
+
+	HWND hwnd = CreateWindow(L"For the dream of game development", // same as first regisiter lpszClassNmae
+		WINDOW_TITLE, WS_OVERLAPPEDWINDOW, // window style
+		CW_USEDEFAULT, CW_USEDEFAULT,	// window situation
+		WINDOW_WIDTH, WINDOW_HEIGHT,	//
+		NULL, NULL, hInstance, NULL
+	);
+
+	MoveWindow(hwnd, 250, 80, WINDOW_WIDTH, WINDOW_HEIGHT, true);
+	ShowWindow(hwnd, nShowCmd); // nShowCmd how to show SW_...
+	UpdateWindow(hwnd);
+
+	if (!Game_Init(hwnd))
+	{
+		MessageBox(hwnd, L"initial source failed", L"MessageBox", 0);
+		return false;
+	}
+
+	// PlaySound(L"生生世世爱.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
+
+	MSG msg = { 0 };
+	while (msg.message != WM_QUIT)
+	{
+		if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))	// PM_REMOVE will remove the message
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		else
+		{
+			g_hNow = GetTickCount();
+			if (g_hNow - g_hPre >= 20)
+				Game_Paint(hwnd);
+		}
+	}
+
+	//while (GetMessage(&msg, 0, 0, 0))
+	//{
+	//	TranslateMessage(&msg);
+	//	DispatchMessageW(&msg);
+	//}
+
+	
+
+	UnregisterClass(L"For the dream of game development", myClass.hInstance);
+	return 0;
+}
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+	case WM_DESTROY:
+		Game_CleanUp(hwnd);
+		PostQuitMessage(0);
+		break;
+
+	case WM_KEYDOWN:
+		switch (wParam)
+		{
+		case VK_ESCAPE:
+			DestroyWindow(hwnd);
+			PostQuitMessage(0);
+			break;
+		}
+		break;
+
+	default:
+		return DefWindowProcA(hwnd, message, wParam, lParam);
+	}
+
+	return 0;
+}
+
+bool Game_Init(HWND hwnd)
+{
+	srand((unsigned)time(NULL));
+
+	g_hdc = GetDC(hwnd);
+	g_mdc = CreateCompatibleDC(g_hdc);
+	g_bufdc = CreateCompatibleDC(g_hdc);
+
+
+	/*initial g_mdc*/
+	HBITMAP bmp;
+	bmp = CreateCompatibleBitmap(g_hdc, WINDOW_WIDTH, WINDOW_HEIGHT);
+	SelectObject(g_mdc, bmp);
+
+	g_hBackground = (HBITMAP)LoadImage(NULL, L"bg.bmp", IMAGE_BITMAP, WINDOW_WIDTH, WINDOW_HEIGHT, LR_LOADFROMFILE);
+	g_hBrid = (HBITMAP)LoadImage(NULL, L"angrybird.bmp", IMAGE_BITMAP, 120, 60, LR_LOADFROMFILE);
+	
+	/* initial bird position */
+	brid.x = 0;
+	brid.y = 100;
+	brid.x_speed = 8;
+	brid.y_speed = 0;
+	brid.gravity = 3;
+	brid.x_friction = -1;
+	brid.y_friction = -4;
+
+	GetClientRect(hwnd, &g_rect);
+
+
+	Game_Paint(hwnd);
+	// ReleaseDC(hwnd, g_hdc);
+	return true;
+}
+
+
+
+
+void Game_Paint(HWND hwnd)
+{
+	SelectObject(g_bufdc, g_hBackground);
+	BitBlt(g_mdc, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, g_bufdc, 0, 0, SRCCOPY);
+
+	SelectObject(g_bufdc, g_hBrid);
+	BitBlt(g_mdc, brid.x, brid.y, 60, 60, g_bufdc, 60, 0, SRCAND);
+	BitBlt(g_mdc, brid.x, brid.y, 60, 60, g_bufdc, 0, 0, SRCPAINT);
+
+
+	BitBlt(g_hdc, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, g_mdc, 0, 0, SRCCOPY);
+
+	//brid.x_speed += brid.x_friction;
+	brid.x += brid.x_speed;
+	//if (brid.x_speed < 0)
+	//	brid.x_speed = 0;
+
+	//brid.y_speed = brid.y_speed + brid.gravity + brid.y_friction;
+	brid.y_speed += brid.gravity;
+	brid.y = brid.y + brid.y_speed;
+	//if (brid.y_speed < 0)
+	//	brid.y_speed = 0;
+
+
+	if (brid.x <= g_rect.left)
+	{
+		brid.x = g_rect.left;
+		brid.x_speed *= -1;
+	}
+	if (brid.x >= g_rect.right - 60)
+	{
+		brid.x = g_rect.right - 60;
+		brid.x_speed *= -1;
+	}
+	//if (brid.y < 0)
+	//{
+	//	brid.y = 0;
+	//	brid.y_speed *= -1;
+	//}
+	if (brid.y >= g_rect.bottom - 60)
+	{
+		brid.y = g_rect.bottom - 60;
+
+		brid.x_speed += brid.x_friction;
+		
+		if (brid.x_speed < 0)
+			brid.x_speed = 0;
+
+		brid.y_speed = brid.y_speed + brid.y_friction;
+		
+		if (brid.y_speed < 0)
+			brid.y_speed = 0;
+
+		brid.y_speed *= -1;
+	}
+	
+	g_hPre = GetTickCount();
+}
+
+bool Game_CleanUp(HWND hwnd)
+{
+	DeleteObject(g_hBackground);
+
+	DeleteDC(g_bufdc);
+	DeleteDC(g_mdc);
+
+	ReleaseDC(hwnd, g_hdc);
+	return true;
+}
+
+
+
